@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realtime Weather - 2026-02-22</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            margin: 0;
+            overflow-x: hidden;
+            background-color: #f8fafc;
+        }
+
+        /* Animated Mesh Gradient Background */
+        .bg-mesh {
+            background: linear-gradient(-45deg, #ff9a9e, #fecfef, #a1c4fd, #c2e9fb);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            height: 100vh;
+            width: 100vw;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.45);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            transition: all 0.2s ease;
+        }
+        
+        .glass-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+        }
+
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+
+        .float-anim { animation: floating 3s ease-in-out infinite; }
+        @keyframes floating {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .loader {
+            border: 3px solid rgba(255,255,255,0.4);
+            border-top: 3px solid #6366f1;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Custom Scrollbar for selects */
+        select::-webkit-scrollbar { width: 8px; }
+        select::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        select::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+    </style>
+</head>
+<body class="text-gray-800 antialiased flex flex-col items-center justify-center min-h-screen p-4 md:p-8">
+
+    <div class="bg-mesh"></div>
+
+    <main class="glass-panel rounded-[2.5rem] p-6 md:p-8 w-full max-w-lg relative flex flex-col gap-6">
+        
+        <header class="text-center mb-2">
+            <h1 class="text-2xl font-extrabold tracking-tight text-gray-900 mb-1">동네 실시간 날씨</h1>
+            <p id="currentTimeDisplay" class="text-sm font-medium text-gray-600">시간 동기화 중...</p>
+        </header>
+
+        <!-- 3-Depth Region Selectors -->
+        <div class="glass-card rounded-2xl p-4 flex flex-col gap-3">
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-widest px-1">지역 선택</div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <select id="sidoSelect" class="w-full bg-white/50 border border-white/60 text-gray-800 text-sm rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 block p-2.5 outline-none transition cursor-pointer font-medium" onchange="onSidoChange()">
+                    <option value="">시/도 선택</option>
+                </select>
+                <select id="sigunguSelect" class="w-full bg-white/50 border border-white/60 text-gray-800 text-sm rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 block p-2.5 outline-none transition cursor-pointer font-medium" onchange="onSigunguChange()" disabled>
+                    <option value="">시/군/구 선택</option>
+                </select>
+                <select id="dongSelect" class="w-full bg-white/50 border border-white/60 text-gray-800 text-sm rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 block p-2.5 outline-none transition cursor-pointer font-medium" onchange="onDongChange()" disabled>
+                    <option value="">읍/면/동 선택</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- State Containers -->
+        <div id="loadingState" class="flex flex-col items-center justify-center py-10">
+            <div class="loader mb-4"></div>
+            <p class="text-gray-600 font-medium animate-pulse text-sm">기상청 데이터를 분석하고 있습니다...</p>
+        </div>
+
+        <div id="errorState" class="hidden flex-col items-center justify-center py-10 text-center">
+            <div class="bg-red-100 p-3 rounded-full mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <p id="errorMessage" class="text-red-500 font-bold mb-1">데이터를 불러올 수 없습니다.</p>
+            <p class="text-xs text-gray-500">통신 지연이 발생했습니다. 다시 지역을 선택해주세요.</p>
+        </div>
+
+        <div id="emptyState" class="hidden flex-col items-center justify-center py-10 text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-3 opacity-50"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            <p class="text-gray-500 font-medium">상단에서 지역을 끝까지 선택해주세요.</p>
+        </div>
+
+        <!-- Weather Content -->
+        <div id="weatherContent" class="hidden flex-col gap-6">
+            <div class="flex flex-col items-center justify-center pt-2">
+                <div id="weatherIconContainer" class="float-anim drop-shadow-xl mb-3"></div>
+                <div class="flex items-start">
+                    <span id="temperature" class="text-7xl font-black tracking-tighter text-gray-900 drop-shadow-sm">-</span>
+                    <span class="text-4xl font-bold text-gray-500 mt-2">°</span>
+                </div>
+                <p id="weatherDesc" class="text-base font-bold text-indigo-700 mt-3 bg-white/60 px-5 py-1.5 rounded-full shadow-sm border border-white/80">확인 중</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="glass-card rounded-2xl p-4 flex items-center gap-3">
+                    <div class="bg-blue-500/10 p-2.5 rounded-xl text-blue-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a5 5 0 0 0 5-5c0-2-2.5-7-5-12-2.5 5-5 10-5 12a5 5 0 0 0 5 5z"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">습도</p>
+                        <p id="humidity" class="text-lg font-extrabold text-gray-800">-%</p>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-2xl p-4 flex items-center gap-3">
+                    <div class="bg-gray-500/10 p-2.5 rounded-xl text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">풍속</p>
+                        <p id="windSpeed" class="text-lg font-extrabold text-gray-800">- m/s</p>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-2xl p-4 flex items-center gap-4 col-span-2">
+                    <div class="bg-indigo-500/10 p-3 rounded-xl text-indigo-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>
+                    </div>
+                    <div class="flex-1 flex justify-between items-center">
+                        <div>
+                            <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider">1시간 강수량</p>
+                            <p id="precipitation" class="text-xl font-black text-gray-800">- mm</p>
+                        </div>
+                        <p id="rainStatus" class="text-xs font-bold text-indigo-600 bg-white/80 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm">-</p>
+                    </div>
+                </div>
+            </div>
+            <p class="text-center text-[10px] text-gray-400 mt-1 font-medium">실황 정보는 구름량을 제공하지 않아 맑음/비/눈으로만 표기됩니다.</p>
+        </div>
+    </main>
+
+    <script>
+        const SERVICE_KEY = "OaRLlfpKOXJH%2BFeghkAojoaSAQbb1bkFF9COvGfjixpiLkEYTHFLqIcBYqFb0HCrcX8H3A47X9QNiRpgcCXAOA%3D%3D";
+
+        const icons = {
+            sun: `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="#fcd34d" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`,
+            rain: `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>`,
+            snow: `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9"/><path d="M8 15h.01"/><path d="M8 19h.01"/><path d="M12 17h.01"/><path d="M12 21h.01"/><path d="M16 15h.01"/><path d="M16 19h.01"/></svg>`
+        };
+
+        // 대용량 데이터를 압축된 문자열 트리 형태로 구축 (시도|시군구|읍면동|nx|ny)
+        // 실제 운영 시에는 별도의 json 파일을 fetch하여 사용하는 것을 권장합니다.
+        const rawRegionData = [
+            "대구광역시|남구|이천동|89|90", "대구광역시|남구|봉덕1동|89|90", "대구광역시|남구|봉덕2동|89|90", "대구광역시|남구|봉덕3동|89|90", "대구광역시|남구|대명1동|89|90", "대구광역시|남구|대명2동|89|90", "대구광역시|남구|대명3동|89|90", "대구광역시|남구|대명4동|89|90", "대구광역시|남구|대명5동|89|90", "대구광역시|남구|대명6동|88|90", "대구광역시|남구|대명9동|88|90", "대구광역시|남구|대명10동|88|90", "대구광역시|남구|대명11동|88|90",
+            "대구광역시|중구|동인동|89|90", "대구광역시|중구|삼덕동|89|90", "대구광역시|중구|성내1동|89|90", "대구광역시|중구|성내2동|89|90", "대구광역시|중구|성내3동|89|90", "대구광역시|중구|대신동|89|90", "대구광역시|중구|남산1동|89|90", "대구광역시|중구|대봉1동|89|90",
+            "대구광역시|동구|신암1동|89|91", "대구광역시|동구|신천1.2동|89|90", "대구광역시|동구|효목1동|90|90", "대구광역시|동구|도평동|90|91", "대구광역시|동구|불로.봉무동|90|91", "대구광역시|동구|지저동|90|91", "대구광역시|동구|동촌동|90|91", "대구광역시|동구|방촌동|90|90", "대구광역시|동구|해안동|90|91", "대구광역시|동구|안심1동|91|90", "대구광역시|동구|공산동|90|92",
+            "대구광역시|서구|내당1동|88|90", "대구광역시|서구|비산1동|88|90", "대구광역시|서구|평리1동|88|90", "대구광역시|서구|상중이동|88|91", "대구광역시|서구|원대동|88|91",
+            "대구광역시|북구|고성동|89|91", "대구광역시|북구|칠성동|89|91", "대구광역시|북구|침산1동|89|91", "대구광역시|북구|산격1동|89|91", "대구광역시|북구|대현동|89|91", "대구광역시|북구|복현1동|89|91", "대구광역시|북구|무태조야동|89|92", "대구광역시|북구|관음동|88|91", "대구광역시|북구|태전1동|88|91", "대구광역시|북구|구암동|88|91", "대구광역시|북구|관문동|88|91",
+            "대구광역시|수성구|범어1동|89|90", "대구광역시|수성구|만촌1동|90|90", "대구광역시|수성구|수성1가동|89|90", "대구광역시|수성구|황금1동|89|90", "대구광역시|수성구|중동|89|90", "대구광역시|수성구|상동|89|90", "대구광역시|수성구|파동|89|89", "대구광역시|수성구|두산동|89|90", "대구광역시|수성구|지산1동|90|89", "대구광역시|수성구|범물1동|90|89", "대구광역시|수성구|고산1동|91|90",
+            "대구광역시|달서구|성당동|88|90", "대구광역시|달서구|두류1.2동|88|90", "대구광역시|달서구|본리동|88|89", "대구광역시|달서구|감삼동|88|90", "대구광역시|달서구|죽전동|88|90", "대구광역시|달서구|장기동|88|89", "대구광역시|달서구|이곡1동|87|90", "대구광역시|달서구|신당동|87|90", "대구광역시|달서구|월성1동|88|89", "대구광역시|달서구|진천동|88|89", "대구광역시|달서구|상인1동|88|89", "대구광역시|달서구|도원동|88|89", "대구광역시|달서구|송현1동|88|89", "대구광역시|달서구|본동|88|89",
+            "대구광역시|달성군|화원읍|87|89", "대구광역시|달성군|논공읍|85|88", "대구광역시|달성군|다사읍|86|90", "대구광역시|달성군|가창면|89|88", "대구광역시|달성군|하빈면|85|91", "대구광역시|달성군|옥포읍|86|88", "대구광역시|달성군|비슬읍|86|87", "대구광역시|달성군|구지면|84|85", "대구광역시|달성군|유가읍|85|86",
+            "서울특별시|종로구|청운효자동|60|127", "서울특별시|종로구|사직동|60|127", "서울특별시|중구|소공동|60|127", "서울특별시|중구|명동|60|127", "서울특별시|용산구|남영동|60|126", "서울특별시|성동구|왕십리도선동|61|127", "서울특별시|광진구|화양동|62|126", "서울특별시|동대문구|용신동|61|127", "서울특별시|중랑구|면목동|62|127", "서울특별시|성북구|성북동|61|127", "서울특별시|강북구|삼양동|61|128", "서울특별시|도봉구|쌍문1동|61|128", "서울특별시|노원구|월계1동|61|128", "서울특별시|은평구|녹번동|59|127", "서울특별시|서대문구|천연동|59|127", "서울특별시|마포구|아현동|59|127", "서울특별시|양천구|목1동|58|126", "서울특별시|강서구|염창동|58|126", "서울특별시|구로구|신도림동|58|125", "서울특별시|금천구|가산동|59|125", "서울특별시|영등포구|여의동|60|126", "서울특별시|동작구|노량진1동|59|125", "서울특별시|관악구|보라매동|59|125", "서울특별시|서초구|서초1동|61|125", "서울특별시|강남구|논현1동|61|126", "서울특별시|송파구|풍납1동|62|126", "서울특별시|강동구|강일동|63|126",
+            "부산광역시|중구|중앙동|97|74", "부산광역시|서구|동대신1동|97|74", "부산광역시|동구|초량1동|98|75", "부산광역시|영도구|남항동|98|74", "부산광역시|부산진구|부전1동|97|75", "부산광역시|동래구|수민동|98|76", "부산광역시|남구|대연1동|98|75", "부산광역시|북구|구포1동|96|76", "부산광역시|해운대구|우1동|99|75", "부산광역시|사하구|괴정1동|96|74", "부산광역시|금정구|서1동|98|76", "부산광역시|강서구|대저1동|96|76", "부산광역시|연제구|거제1동|98|76", "부산광역시|수영구|남천1동|99|75", "부산광역시|사상구|삼락동|96|75", "부산광역시|기장군|기장읍|100|77",
+            "인천광역시|중구|연안동|54|125", "인천광역시|동구|만석동|54|125", "인천광역시|미추홀구|숭의1.3동|54|124", "인천광역시|연수구|옥련1동|54|124", "인천광역시|남동구|구월1동|56|124", "인천광역시|부평구|부평1동|55|125", "인천광역시|계양구|효성1동|55|126", "인천광역시|서구|검암경서동|55|126", "인천광역시|강화군|강화읍|51|130", "인천광역시|옹진군|북도면|51|125",
+            "광주광역시|동구|충장동|59|74", "광주광역시|서구|양동|59|74", "광주광역시|남구|양림동|59|74", "광주광역시|북구|중흥1동|59|75", "광주광역시|광산구|송정1동|57|74",
+            "대전광역시|동구|중앙동|68|133", "대전광역시|중구|은행선화동|68|133", "대전광역시|서구|복수동|67|133", "대전광역시|유성구|진잠동|67|132", "대전광역시|대덕구|오정동|68|133",
+            "울산광역시|중구|학성동|102|84", "울산광역시|남구|신정1동|102|84", "울산광역시|동구|방어동|104|83", "울산광역시|북구|농소1동|103|85", "울산광역시|울주군|온산읍|102|82",
+            "세종특별자치시|세종시|조치원읍|66|119", "세종특별자치시|세종시|새롬동|65|118",
+            "경기도|수원시|장안구파장동|60|121", "경기도|성남시|수정구신흥1동|63|124", "경기도|용인시|처인구포곡읍|64|120", "경기도|고양시|덕양구주교동|57|128", "경기도|부천시|심곡동|57|125",
+            "강원특별자치도|춘천시|신북읍|73|134", "강원특별자치도|원주시|문막읍|76|122", "강원특별자치도|강릉시|주문진읍|92|133",
+            "충청북도|청주시|상당구탑대성동|69|106", "충청북도|충주시|주덕읍|76|114",
+            "충청남도|천안시|동남구목천읍|63|111", "충청남도|공주시|유구읍|60|113",
+            "전라북도|전주시|완산구중앙동|63|89", "전라북도|군산시|옥구읍|56|92",
+            "전라남도|목포시|용당1동|50|67", "전라남도|여수시|돌산읍|74|61",
+            "경상북도|포항시|남구구룡포읍|105|94", "경상북도|경주시|건천읍|96|93", "경상북도|구미시|선산읍|83|100",
+            "경상남도|창원시|의창구동읍|90|77", "경상남도|진주시|문산읍|81|74",
+            "제주특별자치도|제주시|이도1동|53|38", "제주특별자치도|서귀포시|대정읍|50|31"
+        ];
+
+        // 파싱 로직
+        const regionMap = {};
+        rawRegionData.forEach(item => {
+            const [sido, sigungu, dong, nx, ny] = item.split('|');
+            if (!regionMap[sido]) regionMap[sido] = {};
+            if (!regionMap[sido][sigungu]) regionMap[sido][sigungu] = {};
+            regionMap[sido][sigungu][dong] = { nx, ny };
+        });
+
+        const elSido = document.getElementById('sidoSelect');
+        const elSigungu = document.getElementById('sigunguSelect');
+        const elDong = document.getElementById('dongSelect');
+
+        // 초기 시/도 옵션 세팅
+        function initSelectors() {
+            Object.keys(regionMap).sort().forEach(sido => {
+                const opt = document.createElement('option');
+                opt.value = sido;
+                opt.text = sido;
+                elSido.appendChild(opt);
+            });
+            updateDisplayTime();
+            
+            // 초기 화면 설정 (서울특별시 종로구 청운효자동 기본 선택)
+            elSido.value = "서울특별시";
+            onSidoChange();
+            elSigungu.value = "종로구";
+            onSigunguChange();
+            elDong.value = "청운효자동";
+            onDongChange();
+        }
+
+        // 시/도 변경 시 시군구 세팅
+        function onSidoChange() {
+            const sido = elSido.value;
+            elSigungu.innerHTML = '<option value="">시/군/구 선택</option>';
+            elDong.innerHTML = '<option value="">읍/면/동 선택</option>';
+            elSigungu.disabled = !sido;
+            elDong.disabled = true;
+            resetUI();
+
+            if (sido) {
+                Object.keys(regionMap[sido]).sort().forEach(sigungu => {
+                    const opt = document.createElement('option');
+                    opt.value = sigungu;
+                    opt.text = sigungu;
+                    elSigungu.appendChild(opt);
+                });
+            }
+        }
+
+        // 시군구 변경 시 동 세팅
+        function onSigunguChange() {
+            const sido = elSido.value;
+            const sigungu = elSigungu.value;
+            elDong.innerHTML = '<option value="">읍/면/동 선택</option>';
+            elDong.disabled = !sigungu;
+            resetUI();
+
+            if (sigungu) {
+                Object.keys(regionMap[sido][sigungu]).sort().forEach(dong => {
+                    const opt = document.createElement('option');
+                    opt.value = dong;
+                    opt.text = dong;
+                    elDong.appendChild(opt);
+                });
+            }
+        }
+
+        // 동 변경 시 날씨 호출
+        function onDongChange() {
+            const sido = elSido.value;
+            const sigungu = elSigungu.value;
+            const dong = elDong.value;
+            
+            if (dong) {
+                const { nx, ny } = regionMap[sido][sigungu][dong];
+                fetchWeatherData(nx, ny);
+            } else {
+                resetUI();
+            }
+        }
+
+        // UI 상태 초기화
+        function resetUI() {
+            document.getElementById('weatherContent').classList.add('hidden');
+            document.getElementById('weatherContent').classList.remove('flex');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('loadingState').classList.remove('flex');
+            document.getElementById('errorState').classList.add('hidden');
+            document.getElementById('errorState').classList.remove('flex');
+            
+            if (!elDong.value) {
+                document.getElementById('emptyState').classList.remove('hidden');
+                document.getElementById('emptyState').classList.add('flex');
+            } else {
+                document.getElementById('emptyState').classList.add('hidden');
+                document.getElementById('emptyState').classList.remove('flex');
+            }
+        }
+
+        function getBaseDateTime() {
+            const now = new Date();
+            let year = now.getFullYear();
+            let month = now.getMonth() + 1;
+            let day = now.getDate();
+            let hours = now.getHours();
+            let minutes = now.getMinutes();
+
+            // 초단기실황은 매시간 40분에 발표됨
+            if (minutes < 40) {
+                hours -= 1;
+                if (hours < 0) {
+                    now.setDate(now.getDate() - 1);
+                    year = now.getFullYear();
+                    month = now.getMonth() + 1;
+                    day = now.getDate();
+                    hours = 23;
+                }
+            }
+
+            const base_date = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+            const base_time = `${String(hours).padStart(2, '0')}00`;
+            return { base_date, base_time };
+        }
+
+        function updateDisplayTime() {
+            const now = new Date();
+            const dateString = "2026-02-22"; // 2026.0.0. 날짜 룰 적용
+            const timeString = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('currentTimeDisplay').innerText = `${dateString} ${timeString} 기준`;
+        }
+
+        async function fetchWeatherData(nx, ny) {
+            resetUI();
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('emptyState').classList.remove('flex');
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('loadingState').classList.add('flex');
+            
+            updateDisplayTime();
+
+            const { base_date, base_time } = getBaseDateTime();
+            const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?serviceKey=${SERVICE_KEY}&pageNo=1&numOfRows=100&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("네트워크 응답 오류");
+                
+                const data = await response.json();
+                
+                if (data.response && data.response.header && data.response.header.resultCode === "00") {
+                    const items = data.response.body.items.item;
+                    let temp = "-", humidity = "-", wind = "-", rain1h = "-", ptyCode = "0";
+
+                    items.forEach(item => {
+                        switch(item.category) {
+                            case 'T1H': temp = item.obsrValue; break;
+                            case 'REH': humidity = item.obsrValue; break;
+                            case 'WSD': wind = item.obsrValue; break;
+                            case 'RN1': rain1h = item.obsrValue; break;
+                            case 'PTY': ptyCode = item.obsrValue; break;
+                        }
+                    });
+
+                    document.getElementById('temperature').innerText = temp;
+                    document.getElementById('humidity').innerText = `${humidity}%`;
+                    document.getElementById('windSpeed').innerText = `${wind} m/s`;
+                    
+                    const rainVal = parseFloat(rain1h);
+                    document.getElementById('precipitation').innerText = rainVal > 0 ? `${rain1h} mm` : "0 mm";
+
+                    let desc = "맑음/흐림";
+                    let iconCode = icons.sun;
+                    let rainStat = "강수 없음";
+
+                    if (ptyCode === "1" || ptyCode === "5") {
+                        desc = "비";
+                        iconCode = icons.rain;
+                        rainStat = "비 내림";
+                    } else if (ptyCode === "2" || ptyCode === "6") {
+                        desc = "진눈깨비";
+                        iconCode = icons.rain;
+                        rainStat = "진눈깨비 내림";
+                    } else if (ptyCode === "3" || ptyCode === "7") {
+                        desc = "눈";
+                        iconCode = icons.snow;
+                        rainStat = "눈 내림";
+                    }
+
+                    document.getElementById('weatherDesc').innerText = desc;
+                    document.getElementById('rainStatus').innerText = rainStat;
+                    document.getElementById('weatherIconContainer').innerHTML = iconCode;
+
+                    document.getElementById('loadingState').classList.add('hidden');
+                    document.getElementById('loadingState').classList.remove('flex');
+                    document.getElementById('weatherContent').classList.remove('hidden');
+                    document.getElementById('weatherContent').classList.add('flex');
+
+                } else {
+                    throw new Error(data.response?.header?.resultMsg || "API 데이터 오류");
+                }
+            } catch (error) {
+                console.error("Fetch Error:", error);
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('loadingState').classList.remove('flex');
+                document.getElementById('errorState').classList.remove('hidden');
+                document.getElementById('errorState').classList.add('flex');
+                
+                if(error.message.includes('네트워크') || error.message.includes('Failed to fetch')) {
+                     document.getElementById('errorMessage').innerText = "네트워크 통신 오류 발생";
+                } else {
+                     document.getElementById('errorMessage').innerText = "해당 지역의 데이터 응답이 없습니다.";
+                }
+            }
+        }
+
+        // 초기화 실행
+        window.onload = initSelectors;
+        setInterval(updateDisplayTime, 60000);
+
+    </script>
+</body>
+</html>
